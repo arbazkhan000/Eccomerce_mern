@@ -1,0 +1,24 @@
+# Core folders
+node_modules/
+dist/
+build/
+.vite/
+.turbo/
+.next/
+.cache/
+coverage/
+
+# System & Editor files
+.DS_Store
+.vscode/
+.idea/
+*.log
+*.local
+*.tmp
+
+# TypeScript
+*.tsbuildinfo
+
+# Env variables
+.env
+.env.*.local

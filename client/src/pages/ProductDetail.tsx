@@ -5,7 +5,7 @@ import { useDispatch } from "react-redux";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
-import { products } from "../demoData";
+import { products } from "../data/demoData";
 import { addToCart } from "../redux/slice/cartSlice";
 
 const ProductDetail: React.FC = () => {

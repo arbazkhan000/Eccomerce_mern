@@ -1,300 +1,253 @@
-import { Request, Response } from "express";
 import { v2 as cloudinary } from "cloudinary";
-import Product from "../schema/productSchema.ts";
+import { Request, Response } from "express";
+import fs from "fs";
+import Product from "../schema/productSchema";
+import { ApiError } from "../utils/ApiError";
+import { productCreateValidation } from "../utils/validation";
 
-// Configure Cloudinary (should be in a separate config file)
+// Cloudinary config
 cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+  api_key: process.env.CLOUDINARY_API_KEY!,
+  api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-interface IProductImage {
-    url: string;
-    public_id: string;
+interface UploadResult {
+  url: string;
+  public_id: string;
 }
 
-/**
- * Controller for handling product-related operations
- */
-class ProductController {
-    /**
-     * Get all products
-     * @param {Request} req - Express request object
-     * @param {Response} res - Express response object
-     * @returns {Promise<Response>} Response with product list or error message
-     */
-    static async getAllProducts(req: Request, res: Response) {
-        try {
-            const products = await Product.find();
-
-            if (products.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: "No products found",
-                });
-            }
-
-            return res.status(200).json({
-                success: true,
-                message: "Products retrieved successfully",
-                count: products.length,
-                data: products,
-            });
-        } catch (error) {
-            console.error("Get products error:", error);
-            return res.status(500).json({
-                success: false,
-                message: "Failed to retrieve products",
-                error: error instanceof Error ? error.message : "Unknown error",
-            });
-        }
-    }
-
-    /**
-     * Create a new product with image
-     * @param {Request} req - Express request object with file
-     * @param {Response} res - Express response object
-     * @returns {Promise<Response>} Response with created product or error message
-     */
-    static async createProduct(req: Request, res: Response) {
-        const { title, category, price, description, stock } = req.body;
-        const file = req.file;
-
-        try {
-            // Validate required fields
-            if (!title || !category || !price || !description || !stock) {
-                return res.status(400).json({
-                    success: false,
-                    message:
-                        "Title, category, price, description, and stock are required",
-                });
-            }
-
-            if (!file) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Product image is required",
-                });
-            }
-
-            // Upload image to Cloudinary
-            const uploadResult = await cloudinary.uploader.upload(file.path, {
-                folder: "products",
-                resource_type: "image",
-            });
-
-            const productImage: IProductImage = {
-                url: uploadResult.secure_url,
-                public_id: uploadResult.public_id,
-            };
-
-            // Create new product
-            const newProduct = new Product({
-                title,
-                category,
-                price: Number(price),
-                description,
-                stock: Number(stock),
-                image: productImage,
-            });
-
-            await newProduct.save();
-
-            return res.status(201).json({
-                success: true,
-                message: "Product created successfully",
-                data: newProduct,
-            });
-        } catch (error) {
-            console.error("Create product error:", error);
-
-            // Cleanup uploaded file if creation fails
-            if (file) {
-                try {
-                    await cloudinary.uploader.destroy(file.filename);
-                } catch (uploadError) {
-                    console.error(
-                        "Failed to cleanup uploaded image:",
-                        uploadError
-                    );
-                }
-            }
-
-            return res.status(500).json({
-                success: false,
-                message: "Failed to create product",
-                error: error instanceof Error ? error.message : "Unknown error",
-            });
-        }
-    }
-
-    /**
-     * Update product and/or image
-     * @param {Request} req - Express request object
-     * @param {Response} res - Express response object
-     * @returns {Promise<Response>} Response with updated product or error message
-     */
-    static async updateProduct(req: Request, res: Response) {
-        const { id } = req.params;
-        const { title, category, price, description, stock } = req.body;
-        const file = req.file;
-
-        try {
-            const product = await Product.findById(id);
-            if (!product) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Product not found",
-                });
-            }
-
-            const updateFields: Record<string, any> = {};
-
-            if (title) updateFields.title = title;
-            if (category) updateFields.category = category;
-            if (price) updateFields.price = Number(price);
-            if (description) updateFields.description = description;
-            if (stock) updateFields.stock = Number(stock);
-
-            // Handle image update if file exists
-            if (file) {
-                // Upload new image
-                const uploadResult = await cloudinary.uploader.upload(
-                    file.path,
-                    {
-                        folder: "products",
-                        resource_type: "image",
-                    }
-                );
-
-                // Delete old image if exists
-                if (product.images?.public_id) {
-                    await cloudinary.uploader.destroy(product.images.public_id);
+const uploadToCloudinary = (
+    file: Express.Multer.File
+): Promise<UploadResult> => {
+    return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+            {
+                folder: "luxe_products",
+                transformation: { width: 800, height: 800, crop: "limit" },
+            },
+            (error, result) => {
+                if (error || !result) {
+                    console.error("Cloudinary Upload Error:", error);
+                    return reject(new ApiError(500, "Image upload failed."));
                 }
 
-                updateFields.images = {
-                    url: uploadResult.secure_url,
-                    public_id: uploadResult.public_id,
-                };
-            }
-
-            const updatedProduct = await Product.findByIdAndUpdate(
-                id,
-                updateFields,
-                { new: true, runValidators: true }
-            );
-
-            return res.status(200).json({
-                success: true,
-                message: "Product updated successfully",
-                data: updatedProduct,
-            });
-        } catch (error) {
-            console.error("Update product error:", error);
-
-            // Cleanup uploaded file if update fails
-            if (file) {
-                try {
-                    await cloudinary.uploader.destroy(file.filename);
-                } catch (uploadError) {
-                    console.error(
-                        "Failed to cleanup uploaded image:",
-                        uploadError
-                    );
-                }
-            }
-
-            return res.status(500).json({
-                success: false,
-                message: "Failed to update product",
-                error: error instanceof Error ? error.message : "Unknown error",
-            });
-        }
-    }
-
-    /**
-     * Delete a product and its image
-     * @param {Request} req - Express request object
-     * @param {Response} res - Express response object
-     * @returns {Promise<Response>} Response with success message or error
-     */
-    static async deleteProduct(req: Request, res: Response) {
-        const { id } = req.params;
-
-        try {
-            const product = await Product.findById(id);
-            if (!product) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Product not found",
+                resolve({
+                    url: result.secure_url,
+                    public_id: result.public_id,
                 });
             }
+        );
 
-            // Delete image from Cloudinary if exists
-            if (product.images?.public_id) {
-                await cloudinary.uploader.destroy(product.images.public_id);
-            }
+        stream.end(file.buffer); 
+    });
+};
 
-            // Delete product from database
-            await Product.findByIdAndDelete(id);
 
-            return res.status(200).json({
-                success: true,
-                message: "Product deleted successfully",
-            });
-        } catch (error) {
-            console.error("Delete product error:", error);
-            return res.status(500).json({
-                success: false,
-                message: "Failed to delete product",
-                error: error instanceof Error ? error.message : "Unknown error",
-            });
-        }
+
+const cleanupTempFiles = (files: Express.Multer.File[]) => {
+  for (const file of files) {
+    try {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+        console.log(`Deleted temp file: ${file.path}`);
+      }
+    } catch (cleanupError) {
+      console.error(" File cleanup failed:", {
+        file: file.path,
+        message: cleanupError instanceof Error ? cleanupError.message : cleanupError,
+      });
     }
+  }
+};
 
-    /**
-     * Get product details by ID
-     * @param {Request} req - Express request object with product ID parameter
-     * @param {Response} res - Express response object
-     * @returns {Promise<Response>} Response with product details or error message
-     */
-    static async getProductById(req: Request, res: Response) {
-        const { id } = req.params;
+export class productController {
+  static async getAllProducts(req: Request, res: Response): Promise<void> {
+    try {
+      const products = await Product.find();
 
-        try {
-            const product = await Product.findById(id);
+      if (!products || products.length === 0) {
+        throw ApiError.NotFound("No products found in the database.");
+      }
 
-            if (!product) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Product not found",
-                });
-            }
-
-            return res.status(200).json({
-                success: true,
-                message: "Product details retrieved successfully",
-                data: product,
-            });
-        } catch (error) {
-            console.error("Get product by ID error:", error);
-
-            // Handle CastError for invalid ID format
-            if (error.name === "CastError") {
-                return res.status(400).json({
-                    success: false,
-                    message: "Invalid product ID format",
-                });
-            }
-
-            return res.status(500).json({
-                success: false,
-                message: "Failed to retrieve product details",
-                error: error instanceof Error ? error.message : "Unknown error",
-            });
-        }
+      res.status(200).json({
+        success: true,
+        message: "Products retrieved successfully",
+        count: products.length,
+        data: products,
+      });
+    } catch (error) {
+      console.error("[ProductController:getAllProducts]", error);
+      if (error instanceof ApiError) throw error;
+      throw ApiError.InternalServerError("Failed to retrieve products.");
     }
+  }
+
+  static async createProduct(req: Request, res: Response): Promise<void> {
+    const files = req.files as Express.Multer.File[];
+    try {
+      const parsed = productCreateValidation.safeParse(req.body);
+      if (!parsed.success) {
+        throw ApiError.ValidationError(
+          "Product data validation failed. Please check all required fields.",
+          parsed.error.errors
+        );
+      }
+
+      if (!files || files.length === 0) {
+        throw ApiError.BadRequest("Product images are required. Please upload at least one image.");
+      }
+
+      // Try uploading all images to Cloudinary, clean up multer files if any upload fails
+      let uploadResults;
+      try {
+        const uploadPromises = files.map((file) => uploadToCloudinary(file));
+        uploadResults = await Promise.all(uploadPromises);
+      } catch (uploadError) {
+        if (files && files.length > 0) cleanupTempFiles(files);
+        throw uploadError; 
+      }
+      const imageObjects = uploadResults.map((result) => ({
+        url: result.url,
+        public_id: result.public_id,
+      }));
+
+      const { title, category, price, description, stock } = parsed.data;
+
+      const newProduct = new Product({
+        title,
+        category,
+        price,
+        description,
+        stock,
+        images: imageObjects, 
+      });
+
+      await newProduct.save();
+
+      res.status(201).json({
+        success: true,
+        message: "Product created successfully",
+        data: newProduct,
+      });
+    } catch (error) {
+      // Only clean up files if not already done
+      if (files && files.length > 0 && error.message !== "Cloudinary upload error") cleanupTempFiles(files);
+      console.error("[ProductController:createProduct]", error);
+      if (error instanceof ApiError) throw error;
+      throw ApiError.InternalServerError("Failed to create product.");
+    }
+  }
+
+  static async updateProduct(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+    const { title, category, price, description, stock } = req.body;
+    const files = req.files as Express.Multer.File[];
+
+    try {
+      const product = await Product.findById(id);
+      if (!product) throw ApiError.NotFound(`No product found with ID: ${id}`);
+
+      const updateFields: Record<string, any> = {};
+      if (title) updateFields.title = title;
+      if (category) updateFields.category = category;
+      if (price) updateFields.price = Number(price);
+      if (description) updateFields.description = description;
+      if (stock) updateFields.stock = Number(stock);
+
+      // If new images are uploaded, delete old images from Cloudinary and upload new ones
+      if (files && files.length > 0) {
+        // Delete old images from Cloudinary
+        if (product.images && Array.isArray(product.images)) {
+          for (const image of product.images) {
+            if (image.public_id) {
+              try {
+                await cloudinary.uploader.destroy(image.public_id);
+              } catch (cloudErr) {
+                console.error(`Failed to delete image from Cloudinary: ${image.public_id}`, cloudErr);
+              }
+            }
+          }
+        }
+        // Upload new images
+        const uploadPromises = files.map((file) => uploadToCloudinary(file));
+        const uploadResults = await Promise.all(uploadPromises);
+        updateFields.images = uploadResults.map((result) => ({
+          url: result.url,
+          public_id: result.public_id,
+        }));
+      }
+
+      const updatedProduct = await Product.findByIdAndUpdate(id, updateFields, {
+        new: true,
+        runValidators: true,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Product updated successfully",
+        data: updatedProduct,
+      });
+    } catch (error) {
+      if (files && files.length > 0) cleanupTempFiles(files);
+      console.error("[ProductController:updateProduct]", error);
+      if (error instanceof ApiError) throw error;
+      throw ApiError.InternalServerError(`Failed to update product with ID: ${id}`);
+    }
+  }
+
+  static async deleteProduct(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+
+    try {
+      const product = await Product.findById(id);
+      if (!product) throw ApiError.NotFound("Product not found");
+
+      // Delete images from Cloudinary
+      if (product.images && Array.isArray(product.images)) {
+        for (const image of product.images) {
+          if (image.public_id) {
+            try {
+              await cloudinary.uploader.destroy(image.public_id);
+            } catch (cloudErr) {
+              console.error(`Failed to delete image from Cloudinary: ${image.public_id}`, cloudErr);
+            }
+          }
+        }
+      }
+
+      await Product.findByIdAndDelete(id);
+
+      res.status(200).json({
+        success: true,
+        message: "Product and its images deleted successfully",
+      });
+    } catch (error) {
+      console.error("[ProductController:deleteProduct]", error);
+      if (error instanceof ApiError) throw error;
+      throw ApiError.InternalServerError("Failed to delete product.");
+    }
+  }
+
+  static async getProductById(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+
+    try {
+      const product = await Product.findById(id);
+      if (!product) throw ApiError.NotFound("Product not found");
+
+      res.status(200).json({
+        success: true,
+        message: "Product details retrieved successfully",
+        data: product,
+      });
+    } catch (error: any) {
+      if (error.name === "CastError") {
+        throw ApiError.BadRequest("Invalid product ID format");
+      }
+      console.error("[ProductController:getProductById]", error);
+      if (error instanceof ApiError) throw error;
+      throw ApiError.InternalServerError("Failed to retrieve product details.");
+    }
+  }
 }
-
-export default ProductController;

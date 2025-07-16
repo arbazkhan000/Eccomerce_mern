@@ -1,9 +1,9 @@
 import { motion } from "framer-motion";
 import React from "react";
 import { Link } from "react-router-dom";
-import { Button } from "../components/ui/button";
 import ProductCard from "../components/ProductCard";
-import { featuredProducts } from "../demoData";
+import { Button } from "../components/ui/button";
+import { featuredProducts } from "../data/demoData";
 
 const Home: React.FC = () => {
     const productsLoading = false;
@@ -12,7 +12,7 @@ const Home: React.FC = () => {
         ...new Set(featuredProducts.map((item) => item.category)),
     ];
 
-    console.log("Unique category :",uniqueCategory)
+    console.log("Unique category :", uniqueCategory);
 
     const heroVariants = {
         hidden: { opacity: 0 },

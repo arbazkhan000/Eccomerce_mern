@@ -1,13 +1,10 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
+import React, { useState } from "react";
 import { Button } from "../components/ui/button";
-import { categories } from "../demoData";
+import { categories } from "../data/demoData";
 
 const Categories: React.FC = () => {
-
     const [isLoading, setIsLoading] = useState(false);
-   
 
     // Animation variants
     const containerVariants = {
@@ -83,14 +80,14 @@ const Categories: React.FC = () => {
                                 <h3 className="text-2xl font-semibold mb-2">
                                     {category.name}
                                 </h3>
-                                
+
                                 {/* <Link to={`/categories/${category.id}`}> */}
-                                    <Button
-                                        variant="outline"
-                                        className="bg-transparent border-white text-white hover:bg-white hover:text-black"
-                                    >
-                                        Shop {category.name}
-                                    </Button>
+                                <Button
+                                    variant="outline"
+                                    className="bg-transparent border-white text-white hover:bg-white hover:text-black"
+                                >
+                                    Shop {category.name}
+                                </Button>
                                 {/* </Link> */}
                             </div>
                         </motion.div>

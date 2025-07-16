@@ -1,8 +1,8 @@
+import { AnimatePresence, motion } from "framer-motion";
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Button } from "../components/ui/button";
 import ProductCard from "../components/ProductCard";
-import { categories, products } from "../demoData";
+import { Button } from "../components/ui/button";
+import { categories, products } from "../data/demoData";
 
 const Products: React.FC = () => {
     const [selectedCategory, setSelectedCategory] = useState<string | null>(
@@ -18,7 +18,7 @@ const Products: React.FC = () => {
         : products;
 
     // Sort filtered products
-    let sortedProducts = [...filteredProducts];
+    const sortedProducts = [...filteredProducts];
     if (sortBy === "price-asc") {
         sortedProducts.sort((a, b) => a.price - b.price);
     } else if (sortBy === "price-desc") {
@@ -81,13 +81,13 @@ const Products: React.FC = () => {
                                     <Button
                                         key={category.id}
                                         variant={
-                                            selectedCategory === category.id
+                                            selectedCategory === category.name
                                                 ? "default"
                                                 : "outline"
                                         }
                                         className="w-full justify-start"
                                         onClick={() =>
-                                            setSelectedCategory(category.id)
+                                            setSelectedCategory(category.name)
                                         }
                                     >
                                         {category.name}
